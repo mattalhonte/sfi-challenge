@@ -8,6 +8,7 @@ from toolz.itertoolz import groupby, sliding_window, partition
 from toolz.dicttoolz import itemmap, valmap
 from joblib import Parallel, delayed
 from toolz.dicttoolz import valfilter
+import uuid
 
 def singleChoice(poolName):
     def fn(aggRecord=None, tau=0):
@@ -233,13 +234,81 @@ def runSimulation(startingStrat, updateStrats, switchThresholds=[np.inf], nAgent
         oneStep(board, moveRecord, aggRecord, balanceRecord, stratRecord, tau)
         
     #Remember, agent Strats & Starting position are in the Final Score
-        
+    
+    agentStats = pd.DataFrame([agentToDict(x) for x in board.values()])
+    
+    simStats = {"game_id": str(uuid.uuid4()),
+               "n_agents": nAgents,
+               "n_rounds": nRound,
+               "tau": tau}
+    
     return {"board": board,
            "aggRecord": aggRecord,
            "moveRecord": moveRecord,
            "finalScores": finalScore(board),
            "balanceRecord":balanceRecord,
-           "stratRecord":stratRecord}
+           "stratRecord":stratRecord,
+           "agentStats":agentStats,
+           "simStats": simStats}
+
+
+def prepSimForDB(sim):
+    
+    outputSim = {}
+    
+    outputSim["agg_record"] = (sim["aggRecord"]
+         .assign(round = lambda x: x.index,
+             game_id = sim["simStats"]["game_id"]))
+    
+    outputSim["move_record"] = (sim["moveRecord"]
+         .assign(agent = lambda x: x.index,
+             game_id = sim["simStats"]["game_id"]))
+    
+    outputSim["final_scores"] = (sim["finalScores"]
+         .assign(agent = lambda x: x.index,
+             game_id = sim["simStats"]["game_id"]))
+    
+    outputSim["balance_record"] = (sim["balanceRecord"]
+         .assign(agent = lambda x: x.index,
+             game_id = sim["simStats"]["game_id"]))
+    
+    outputSim["strat_record"] = (sim["stratRecord"]
+         .assign(agent = lambda x: x.index,
+             game_id = sim["simStats"]["game_id"]))
+    
+    outputSim["agent_stats"] = (sim["agentStats"]
+         .assign(agent = lambda x: x.index,
+             game_id = sim["simStats"]["game_id"]))
+    
+    outputSim["sim_stats"] = (pd.DataFrame(sim["simStats"], index=[0])
+         .assign(agent = lambda x: x.index,
+             game_id = sim["simStats"]["game_id"]))
+    
+    return outputSim
+    
+#conn = sqlite3.connect(r"simulations.db")
+def saveSimToDB(conn, sim):
+    toDB = prepSimForDB(sim)
+    for x in toDB.items():
+        x[1].to_sql(x[0], conn, if_exists="append")
+        
+#saveSimToDB(conn, testSim)
+def readSimFromDB(conn, game_id):
+    trnslt = [('agg_record', 'aggRecord'),
+ ('move_record', 'moveRecord'),
+ ('final_scores', 'finalScores'),
+ ('balance_record', 'balanceRecord'),
+ ('strat_record', 'stratRecord'),
+ ('agent_stats', 'agentStats'),
+ ('sim_stats', 'simStats')]
+    
+    return {x[1]: pd.io.sql.read_sql(f"SELECT * FROM {x[0]} WHERE game_id='{game_id}'", conn)
+            
+def getGamesWithStratAtRound(conn, strat, rnd):
+    query = f"""SELECT DISTINCT game_id FROM strat_record WHERE "{rnd}"='{strat}';"""
+    return pd.io.sql.read_sql(query, conn).values[:,0]
+            
+#getGamesWithStratAtRound(conn, "SingleChoiceS", 0)
 
 def graphBoardPopulations(aggRecord):
     dfToUse = aggRecord.copy()
