@@ -6,7 +6,6 @@ import inspect
 from IPython.display import display, Markdown
 from toolz.itertoolz import groupby, sliding_window, partition
 from toolz.dicttoolz import itemmap, valmap
-from joblib import Parallel, delayed
 from toolz.dicttoolz import valfilter
 import uuid
 
@@ -302,7 +301,7 @@ def readSimFromDB(conn, game_id):
  ('agent_stats', 'agentStats'),
  ('sim_stats', 'simStats')]
     
-    return {x[1]: pd.io.sql.read_sql(f"SELECT * FROM {x[0]} WHERE game_id='{game_id}'", conn)
+    return {x[1]: pd.io.sql.read_sql(f"SELECT * FROM {x[0]} WHERE game_id='{game_id}'", conn) for x in trnslt}
             
 def getGamesWithStratAtRound(conn, strat, rnd):
     query = f"""SELECT DISTINCT game_id FROM strat_record WHERE "{rnd}"='{strat}';"""
